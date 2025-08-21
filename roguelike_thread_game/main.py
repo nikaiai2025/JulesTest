@@ -126,7 +126,7 @@ class Boss(Enemy):
         super().__init__(game, (SCREEN_WIDTH - 50, SCREEN_HEIGHT / 2))
         self.params = params
         self.image = pygame.Surface((80, 120)); self.image.fill(params['color'])
-        self.rect = self.image.get_rect(center=self.rect.center)
+        self.rect = self.image.get_rect(center=(SCREEN_WIDTH - 50, SCREEN_HEIGHT / 2))
         self.damage = BOSS_DAMAGE
         self.vy = params['vy']
         self.last_shot_time = time.time()
