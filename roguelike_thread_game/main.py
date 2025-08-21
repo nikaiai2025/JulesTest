@@ -281,6 +281,64 @@ class Game:
         else: text_rect.topleft = (x, y)
         self.screen.blit(text_surface, text_rect)
 
+    # --- Frame-specific methods for each game state ---
+
+    def _handle_events(self, events):
+        for event in events:
+            if event.type == pygame.QUIT:
+                return False # Signal to exit game
+
+            if self.game_state == 'start_menu':
+                if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+                    self._reset_game_variables()
+                    self.game_state = 'playing'
+
+            elif self.game_state == 'playing':
+                if event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP):
+                    self.player.switch_direction()
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    self.player.switch_direction()
+
+            elif self.game_state == 'game_over':
+                if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+                    self.game_state = 'start_menu'
+        return True # Signal to continue game
+
+    def _update_playing_state(self):
+        if self.player.is_alive:
+            score_to_add = self.scroll_speed * self.player.score_multiplier
+            self.score += score_to_add
+            if self.current_stage == 'endless':
+                self.scroll_speed += STAGE_CONFIGS['endless']['speed_increase_rate']
+            if not self.boss_battle_active and self.current_stage != 'endless' and self.score >= self.stage_config['boss_trigger']:
+                self._start_boss_battle()
+            if self.boss_battle_active and time.time() - self.boss_battle_start_time > BOSS_BATTLE_DURATION:
+                self._end_boss_battle()
+            self._generate_world()
+            self.all_sprites.update()
+            self._handle_collisions()
+            if not self.player.is_alive:
+                self.game_state = 'game_over'
+
+    def _draw_screen(self):
+        self.screen.fill(BACKGROUND_COLOR)
+        if self.game_state == 'start_menu':
+            self._draw_text("Roguelike Threader", self.font_big, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50)
+            self._draw_text("Press any key to start", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 50)
+
+        elif self.game_state == 'playing':
+            self.all_sprites.draw(self.screen)
+            self._draw_playing_ui()
+
+        elif self.game_state == 'game_over':
+            self._draw_text("GAME OVER", self.font_big, RED, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50)
+            final_stage = f"Stage Reached: {self.current_stage}"
+            self._draw_text(final_stage, self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 20)
+            self._draw_text(f"Final Score: {int(self.score)}", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
+            self._draw_text("Press any key to return to menu", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 110)
+
+        pygame.display.flip()
+
     def _draw_playing_ui(self):
         self._draw_text(f"HP: {int(self.player.hp)}", self.font_small, WHITE, 10, 10, center=False)
         stage_text = f"Stage: {self.current_stage}" if self.current_stage != 'endless' else "Endless"
@@ -303,60 +361,20 @@ class Game:
             time_left = BOSS_BATTLE_DURATION - (time.time() - self.boss_battle_start_time)
             self._draw_text(f"SURVIVE: {max(0, time_left):.1f}s", self.font_small, RED, SCREEN_WIDTH/2, 20)
 
-    def _run_start_menu(self):
-        self.screen.fill(BACKGROUND_COLOR)
-        self._draw_text("Roguelike Threader", self.font_big, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50)
-        self._draw_text("Press any key to start", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 50)
-        pygame.display.flip()
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
-            if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-                self._reset_game_variables(); self.game_state = 'playing'
-
-    def _run_playing(self):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
-            if event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP): self.player.switch_direction()
-            if event.type == pygame.MOUSEBUTTONDOWN: self.player.switch_direction()
-
-        if self.player.is_alive:
-            score_to_add = self.scroll_speed * self.player.score_multiplier
-            self.score += score_to_add
-            if self.current_stage == 'endless':
-                self.scroll_speed += STAGE_CONFIGS['endless']['speed_increase_rate']
-            if not self.boss_battle_active and self.current_stage != 'endless' and self.score >= self.stage_config['boss_trigger']:
-                self._start_boss_battle()
-            if self.boss_battle_active and time.time() - self.boss_battle_start_time > BOSS_BATTLE_DURATION:
-                self._end_boss_battle()
-            self._generate_world()
-            self.all_sprites.update()
-            self._handle_collisions()
-            if not self.player.is_alive: self.game_state = 'game_over'
-
-        self.screen.fill(BACKGROUND_COLOR)
-        self.all_sprites.draw(self.screen)
-        self._draw_playing_ui()
-        pygame.display.flip()
-        self.clock.tick(FPS)
-
-    def _run_game_over(self):
-        self.screen.fill(BACKGROUND_COLOR)
-        self._draw_text("GAME OVER", self.font_big, RED, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50)
-        final_stage = f"Stage Reached: {self.current_stage}"
-        self._draw_text(final_stage, self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 20)
-        self._draw_text(f"Final Score: {int(self.score)}", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 60)
-        self._draw_text("Press any key to return to menu", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 110)
-        pygame.display.flip()
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: pygame.quit(); sys.exit()
-            if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-                self.game_state = 'start_menu'
-
     def run(self):
-        while True:
-            if self.game_state == 'start_menu': self._run_start_menu()
-            elif self.game_state == 'playing': self._run_playing()
-            elif self.game_state == 'game_over': self._run_game_over()
+        running = True
+        while running:
+            events = pygame.event.get()
+            running = self._handle_events(events)
+
+            if self.game_state == 'playing':
+                self._update_playing_state()
+
+            self._draw_screen()
+            self.clock.tick(FPS)
+
+        pygame.quit()
+        sys.exit()
 
 if __name__ == "__main__":
     game = Game()
