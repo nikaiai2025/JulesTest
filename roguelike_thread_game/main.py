@@ -158,12 +158,14 @@ class Player(pygame.sprite.Sprite):
         self.radius = PLAYER_RADIUS
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         self.rect = self.image.get_rect(center=(100, SCREEN_HEIGHT / 2))
-        self._draw_player()
+
         self.y_speed = PLAYER_INITIAL_Y_SPEED; self.direction = 1
         self.hp = PLAYER_INITIAL_HP; self.is_alive = True
         self.shielded = False; self.shield_end_time = 0
         self.speed_down = False; self.speed_down_end_time = 0
         self.score_multiplier = 1; self.score_mult_end_time = 0
+
+        self._draw_player()
 
     def _draw_player(self):
         self.image.fill((0,0,0,0))
