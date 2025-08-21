@@ -30,6 +30,7 @@ SHIELD_DURATION = 5
 SPEED_DOWN_DURATION = 8
 SPEED_DOWN_FACTOR = 0.5
 SCORE_MULT_DURATION = 7
+TUNNEL_Y_CHANGE_SPEED = 0.5
 
 # Stage & Boss Settings
 STAGE_CONFIGS = {
@@ -225,7 +226,7 @@ class Game:
 
     def _generate_world(self):
         if self.boss_battle_active: return
-        self.tunnel_center_y += 0.5
+        self.tunnel_center_y += self.tunnel_y_direction * TUNNEL_Y_CHANGE_SPEED
         if self.tunnel_center_y < 150 or self.tunnel_center_y > SCREEN_HEIGHT - 150: self.tunnel_y_direction *= -1
 
         tunnel_gap = self.stage_config['gap']
