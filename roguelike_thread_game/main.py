@@ -245,7 +245,7 @@ class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("ローグライク糸通しゲーム")
+        pygame.display.set_caption("Roguelike Threader")
         self.clock = pygame.time.Clock()
         self.font_big = pygame.font.Font(None, 74)
         self.font_small = pygame.font.Font(None, 36)
@@ -254,10 +254,10 @@ class Game:
 
         # Character selection attributes
         self.character_options = ['sanctuary', 'golden_age']
-        self.character_names = {'sanctuary': '聖域の騎士', 'golden_age': '黄金の探求者'}
+        self.character_names = {'sanctuary': 'Sanctuary Knight', 'golden_age': 'Golden Seeker'}
         self.character_descriptions = {
-            'sanctuary': '必殺技「聖域」: 完全無敵になり、全ての敵と弾を消し去る。',
-            'golden_age': '必殺技「黄金時代」: スコア獲得量が5倍になり、ダメージを受けなくなる。'
+            'sanctuary': 'Special: Become invincible and clear all enemies and bullets.',
+            'golden_age': 'Special: Gain a 5x score multiplier and become invincible.'
         }
         self.selected_character_index = 0
 
@@ -346,7 +346,8 @@ class Game:
                 return False # Signal to exit game
 
             if self.game_state == 'start_menu':
-                if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+                # Transition on key/mouse release to prevent event conflict
+                if event.type == pygame.KEYUP or event.type == pygame.MOUSEBUTTONUP:
                     self.game_state = 'character_select'
 
             elif self.game_state == 'character_select':
@@ -370,7 +371,8 @@ class Game:
                     self.player.switch_direction()
 
             elif self.game_state == 'game_over':
-                if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+                # Transition on key/mouse release
+                if event.type == pygame.KEYUP or event.type == pygame.MOUSEBUTTONUP:
                     self.game_state = 'character_select'
         return True # Signal to continue game
 
@@ -405,18 +407,22 @@ class Game:
             self._draw_text("Press any key to start", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 50)
 
         elif self.game_state == 'character_select':
-            self._draw_text("キャラクター選択", self.font_big, WHITE, SCREEN_WIDTH / 2, 100)
+            self._draw_text("Select Character", self.font_big, WHITE, SCREEN_WIDTH / 2, 100)
 
+            # Display character options
+            option_width = 300
             for i, char_type in enumerate(self.character_options):
                 name = self.character_names[char_type]
+                x_pos = (SCREEN_WIDTH / 2) + (i - 0.5) * option_width
                 color = GOLD if i == self.selected_character_index else WHITE
-                self._draw_text(name, self.font_small, color, SCREEN_WIDTH / 2, 200 + i * 150)
+                self._draw_text(name, self.font_small, color, x_pos, 250)
 
+            # Display description for selected character
             selected_char_type = self.character_options[self.selected_character_index]
             description = self.character_descriptions[selected_char_type]
-            self._draw_text(description, self.font_small, WHITE, SCREEN_WIDTH / 2, 450)
+            self._draw_text(description, self.font_small, WHITE, SCREEN_WIDTH / 2, 400)
 
-            self._draw_text("矢印キーで選択し、Enterキーで決定", self.font_small, WHITE, SCREEN_WIDTH / 2, 550)
+            self._draw_text("Use Arrow Keys to Select, Enter to Start", self.font_small, WHITE, SCREEN_WIDTH / 2, 550)
 
         elif self.game_state == 'playing':
             self.all_sprites.draw(self.screen)
