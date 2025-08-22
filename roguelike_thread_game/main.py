@@ -22,14 +22,19 @@ PLAYER_INITIAL_Y_SPEED = 2
 PLAYER_ACCELERATION = 0.1
 PLAYER_MAX_Y_SPEED = 5
 PLAYER_INITIAL_HP = 100
+FOCUS_GAIN_RATE = 0.2 # Points per frame
+MAX_FOCUS = 100
+SPECIAL_DURATION = 7 # seconds
+SPECIAL_SCROLL_MULTIPLIER = 3
+GOLDEN_AGE_SCORE_MULTIPLIER = 5
 ITEM_SPAWN_CHANCE = 0.01 # Tuned
 ENEMY_SPAWN_CHANCE = 0.015 # Tuned
 ENEMY_DAMAGE = 10
-HEAL_AMOUNT = 25
-SHIELD_DURATION = 5
-SPEED_DOWN_DURATION = 8
+HEAL_AMOUNT = 40 # Increased
+SHIELD_DURATION = 7 # Increased
+SPEED_DOWN_DURATION = 10 # Increased
 SPEED_DOWN_FACTOR = 0.5
-SCORE_MULT_DURATION = 7
+SCORE_MULT_DURATION = 10 # Increased
 TUNNEL_Y_CHANGE_SPEED = 0.5
 
 # Stage & Boss Settings
@@ -154,8 +159,9 @@ class Obstacle(Entity):
         self.rect = self.image.get_rect(topleft=(x, y))
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, character_type='sanctuary'):
         super().__init__()
+        self.character_type = character_type
         self.radius = PLAYER_RADIUS
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         self.rect = self.image.get_rect(center=(100, SCREEN_HEIGHT / 2))
@@ -166,6 +172,11 @@ class Player(pygame.sprite.Sprite):
         self.speed_down = False; self.speed_down_end_time = 0
         self.score_multiplier = 1; self.score_mult_end_time = 0
 
+        # Focus Gauge & Special
+        self.focus_gauge = 0
+        self.special_active = False
+        self.special_end_time = 0
+
         self._draw_player()
 
     def _draw_player(self):
@@ -175,7 +186,8 @@ class Player(pygame.sprite.Sprite):
 
     def switch_direction(self): self.direction *= -1
     def take_damage(self, amount):
-        if not self.shielded:
+        # Specials also grant invincibility
+        if not self.shielded and not self.special_active:
             self.hp -= amount
             if self.hp <= 0: self.hp = 0; self.is_alive = False; self.kill()
     def heal(self, amount): self.hp = min(self.hp + amount, PLAYER_INITIAL_HP)
@@ -186,10 +198,39 @@ class Player(pygame.sprite.Sprite):
     def activate_score_multiplier(self, duration):
         self.score_multiplier = 2; self.score_mult_end_time = time.time() + duration
 
+    def reset_focus(self):
+        self.focus_gauge = 0
+
+    def activate_special(self, game):
+        if self.focus_gauge >= MAX_FOCUS and not self.special_active:
+            self.focus_gauge = 0
+            self.special_active = True
+            self.special_end_time = time.time() + SPECIAL_DURATION
+
+            if self.character_type == 'sanctuary':
+                game.clear_enemies_and_projectiles()
+            elif self.character_type == 'golden_age':
+                self.score_multiplier = GOLDEN_AGE_SCORE_MULTIPLIER
+                # This will be reset in update()
+                self.score_mult_end_time = self.special_end_time
+
     def update(self):
+        # Update focus gauge
+        if not self.special_active:
+            self.focus_gauge = min(self.focus_gauge + FOCUS_GAIN_RATE, MAX_FOCUS)
+
+        # Update timers
         if self.shielded and time.time() > self.shield_end_time: self.shielded = False; self._draw_player()
         if self.speed_down and time.time() > self.speed_down_end_time: self.speed_down = False
-        if self.score_multiplier > 1 and time.time() > self.score_mult_end_time: self.score_multiplier = 1
+
+        # Handle end of special move
+        if self.special_active and time.time() > self.special_end_time:
+            self.special_active = False
+            self.score_multiplier = 1 # Always reset score multiplier after special
+
+        # Reset score multiplier from regular item if special is not golden age
+        if self.score_multiplier > 1 and not (self.special_active and self.character_type == 'golden_age') and time.time() > self.score_mult_end_time:
+             self.score_multiplier = 1
 
         max_speed = PLAYER_MAX_Y_SPEED * SPEED_DOWN_FACTOR if self.speed_down else PLAYER_MAX_Y_SPEED
         target_speed = max_speed * self.direction
@@ -211,7 +252,16 @@ class Game:
         self.game_state = 'start_menu'
         self.item_types = [HPRecoveryItem, ShieldItem, SpeedDownItem, ScoreMultiplierItem, ScreenClearItem]
 
-    def _reset_game_variables(self):
+        # Character selection attributes
+        self.character_options = ['sanctuary', 'golden_age']
+        self.character_names = {'sanctuary': '聖域の騎士', 'golden_age': '黄金の探求者'}
+        self.character_descriptions = {
+            'sanctuary': '必殺技「聖域」: 完全無敵になり、全ての敵と弾を消し去る。',
+            'golden_age': '必殺技「黄金時代」: スコア獲得量が5倍になり、ダメージを受けなくなる。'
+        }
+        self.selected_character_index = 0
+
+    def _reset_game_variables(self, character_type='sanctuary'):
         self.score = 0
         self.current_stage = 1
         self.stage_config = STAGE_CONFIGS[self.current_stage]
@@ -220,7 +270,7 @@ class Game:
         self.all_sprites = pygame.sprite.Group(); self.obstacles = pygame.sprite.Group()
         self.items = pygame.sprite.Group(); self.enemies = pygame.sprite.Group()
         self.projectiles = pygame.sprite.Group()
-        self.player = Player(); self.all_sprites.add(self.player)
+        self.player = Player(character_type); self.all_sprites.add(self.player)
         self.tunnel_center_y = SCREEN_HEIGHT / 2
         self.tunnel_y_direction = 1; self.next_obstacle_spawn_x = 0
 
@@ -266,7 +316,13 @@ class Game:
 
     def _handle_collisions(self):
         if pygame.sprite.spritecollide(self.player, self.obstacles, False): self.player.take_damage(1)
-        for item in pygame.sprite.spritecollide(self.player, self.items, True): item.apply_effect(self.player)
+
+        collided_items = pygame.sprite.spritecollide(self.player, self.items, True)
+        if collided_items:
+            self.player.reset_focus()
+            for item in collided_items:
+                item.apply_effect(self.player)
+
         for enemy in pygame.sprite.spritecollide(self.player, self.enemies, False): self.player.take_damage(enemy.damage)
         if pygame.sprite.spritecollide(self.player, self.projectiles, True): self.player.take_damage(PROJECTILE_DAMAGE)
 
@@ -291,26 +347,47 @@ class Game:
 
             if self.game_state == 'start_menu':
                 if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-                    self._reset_game_variables()
-                    self.game_state = 'playing'
+                    self.game_state = 'character_select'
+
+            elif self.game_state == 'character_select':
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RIGHT:
+                        self.selected_character_index = (self.selected_character_index + 1) % len(self.character_options)
+                    elif event.key == pygame.K_LEFT:
+                        self.selected_character_index = (self.selected_character_index - 1) % len(self.character_options)
+                    elif event.key == pygame.K_RETURN:
+                        selected_char = self.character_options[self.selected_character_index]
+                        self._reset_game_variables(selected_char)
+                        self.game_state = 'playing'
 
             elif self.game_state == 'playing':
-                if event.type == pygame.KEYDOWN and (event.key == pygame.K_SPACE or event.key == pygame.K_UP):
-                    self.player.switch_direction()
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE or event.key == pygame.K_UP:
+                        self.player.switch_direction()
+                    elif event.key == pygame.K_x:
+                        self.player.activate_special(self)
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     self.player.switch_direction()
 
             elif self.game_state == 'game_over':
                 if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
-                    self.game_state = 'start_menu'
+                    self.game_state = 'character_select'
         return True # Signal to continue game
 
     def _update_playing_state(self):
         if self.player.is_alive:
+            # Handle scroll speed for special
+            if self.player.special_active:
+                self.scroll_speed = self.stage_config['scroll_speed'] * SPECIAL_SCROLL_MULTIPLIER
+            else:
+                self.scroll_speed = self.stage_config['scroll_speed']
+                if self.current_stage == 'endless':
+                    self.stage_config['scroll_speed'] += STAGE_CONFIGS['endless']['speed_increase_rate']
+
+
             score_to_add = self.scroll_speed * self.player.score_multiplier
             self.score += score_to_add
-            if self.current_stage == 'endless':
-                self.scroll_speed += STAGE_CONFIGS['endless']['speed_increase_rate']
+
             if not self.boss_battle_active and self.current_stage != 'endless' and self.score >= self.stage_config['boss_trigger']:
                 self._start_boss_battle()
             if self.boss_battle_active and time.time() - self.boss_battle_start_time > BOSS_BATTLE_DURATION:
@@ -327,6 +404,20 @@ class Game:
             self._draw_text("Roguelike Threader", self.font_big, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 50)
             self._draw_text("Press any key to start", self.font_small, WHITE, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 50)
 
+        elif self.game_state == 'character_select':
+            self._draw_text("キャラクター選択", self.font_big, WHITE, SCREEN_WIDTH / 2, 100)
+
+            for i, char_type in enumerate(self.character_options):
+                name = self.character_names[char_type]
+                color = GOLD if i == self.selected_character_index else WHITE
+                self._draw_text(name, self.font_small, color, SCREEN_WIDTH / 2, 200 + i * 150)
+
+            selected_char_type = self.character_options[self.selected_character_index]
+            description = self.character_descriptions[selected_char_type]
+            self._draw_text(description, self.font_small, WHITE, SCREEN_WIDTH / 2, 450)
+
+            self._draw_text("矢印キーで選択し、Enterキーで決定", self.font_small, WHITE, SCREEN_WIDTH / 2, 550)
+
         elif self.game_state == 'playing':
             self.all_sprites.draw(self.screen)
             self._draw_playing_ui()
@@ -341,22 +432,35 @@ class Game:
         pygame.display.flip()
 
     def _draw_playing_ui(self):
+        # HP Bar
         self._draw_text(f"HP: {int(self.player.hp)}", self.font_small, WHITE, 10, 10, center=False)
+
+        # Focus Gauge
+        pygame.draw.rect(self.screen, (50, 50, 50), [10, 40, 200, 20])
+        focus_width = (self.player.focus_gauge / MAX_FOCUS) * 200
+        color = GOLD if self.player.focus_gauge >= MAX_FOCUS else (255, 255, 100)
+        pygame.draw.rect(self.screen, color, [10, 40, focus_width, 20])
+        self._draw_text("Focus (X)", self.font_small, WHITE, 110, 25, center=True)
+
+
         stage_text = f"Stage: {self.current_stage}" if self.current_stage != 'endless' else "Endless"
         score_text = f"Score: {int(self.score)}"
         self._draw_text(stage_text, self.font_small, WHITE, SCREEN_WIDTH - self.font_small.size(stage_text)[0] - 10, 10, center=False)
         self._draw_text(score_text, self.font_small, WHITE, SCREEN_WIDTH - self.font_small.size(score_text)[0] - 10, 40, center=False)
 
-        status_y_offset = 40
-        if self.player.shielded:
+        status_y_offset = 70 # Adjusted for focus bar
+        if self.player.special_active:
+            special_time_left = self.player.special_end_time - time.time()
+            self._draw_text(f"SPECIAL: {special_time_left:.1f}s", self.font_small, GOLD, 10, status_y_offset, center=False); status_y_offset += 30
+        elif self.player.shielded:
             shield_time_left = self.player.shield_end_time - time.time()
             self._draw_text(f"Shield: {shield_time_left:.1f}s", self.font_small, PLAYER_SHIELD_COLOR, 10, status_y_offset, center=False); status_y_offset += 30
         if self.player.speed_down:
             speed_time_left = self.player.speed_down_end_time - time.time()
             self._draw_text(f"Slow: {speed_time_left:.1f}s", self.font_small, (255, 165, 0), 10, status_y_offset, center=False); status_y_offset += 30
-        if self.player.score_multiplier > 1:
+        if self.player.score_multiplier > 1 and not (self.player.special_active and self.player.character_type == 'golden_age'):
             mult_time_left = self.player.score_mult_end_time - time.time()
-            self._draw_text(f"Score x2: {mult_time_left:.1f}s", self.font_small, GOLD, 10, status_y_offset, center=False); status_y_offset += 30
+            self._draw_text(f"Score x{self.player.score_multiplier}: {mult_time_left:.1f}s", self.font_small, GOLD, 10, status_y_offset, center=False); status_y_offset += 30
 
         if self.boss_battle_active:
             time_left = BOSS_BATTLE_DURATION - (time.time() - self.boss_battle_start_time)
